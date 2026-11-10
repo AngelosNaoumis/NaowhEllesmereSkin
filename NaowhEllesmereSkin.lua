@@ -145,7 +145,6 @@ local shellCount = 0
 local stats = { watched = 0, notTop = 0, small = 0, waiting = 0 }
 local lastError
 local evaluatePending = setmetatable({}, { __mode = "k" })
-local Edge
 local Evaluate, Edge, SyncShown
 
 -- A window: a frame on UIParent, or one laid exactly over a frame on UIParent (Naowh's
@@ -160,13 +159,18 @@ end
 
 -- Naowh's own full-size background fills on the frame itself (the flat fill, or the backdrop's
 -- gradient) would cover the shell's art, so they go see-through. Child frames are left alone.
-local function FadeOwnBackground(frame, w, h)
-    for _, region in ipairs({ frame:GetRegions() }) do
+local function FadeBackgroundRegions(w, h, ...)
+    for index = 1, select("#", ...) do
+        local region = select(index, ...)
         if region:GetObjectType() == "Texture" and region:GetDrawLayer() == "BACKGROUND" then
             local rw, rh = region:GetSize()
             if math.abs(rw - w) <= SIZE_SLACK and math.abs(rh - h) <= SIZE_SLACK then region:SetAlpha(0) end
         end
     end
+end
+
+local function FadeOwnBackground(frame, w, h)
+    FadeBackgroundRegions(w, h, frame:GetRegions())
 end
 
 local function Shell(frame, w, h)
@@ -225,13 +229,15 @@ local function EvaluateLater(frame)
     end)
 end
 
+local function WatchedWindowShown(self)
+    if not shelled[self] and seen[self] ~= "skip" then EvaluateLater(self) end
+end
+
 local function Watch(frame)
     if not frame or seen[frame] or not frame.HookScript then return end
     seen[frame] = true
     stats.watched = stats.watched + 1
-    frame:HookScript("OnShow", function(self)
-        if not shelled[self] and seen[self] ~= "skip" then EvaluateLater(self) end
-    end)
+    frame:HookScript("OnShow", WatchedWindowShown)
     EvaluateLater(frame)
 end
 
@@ -318,16 +324,22 @@ local applied = setmetatable({}, { __mode = "k" }) -- frame -> true once its bor
 local tints = setmetatable({}, { __mode = "k" })   -- frame -> colour Naowh last gave its own edge
 local SyncShown
 
-local function HighestLevel(frame, depth)
-    local top = frame:GetFrameLevel()
-    if depth <= 0 then return top end
-    for _, child in ipairs({ frame:GetChildren() }) do
+local HighestLevel
+local function HighestChildLevel(depth, top, ...)
+    for index = 1, select("#", ...) do
+        local child = select(index, ...)
         if not ours[child] then
             local level = HighestLevel(child, depth - 1)
             if level > top then top = level end
         end
     end
     return top
+end
+
+HighestLevel = function(frame, depth)
+    local top = frame:GetFrameLevel()
+    if depth <= 0 then return top end
+    return HighestChildLevel(depth, top, frame:GetChildren())
 end
 
 local function BorderFrames(frame)
@@ -357,7 +369,7 @@ local function Tint(frame)
     pcall(E.SetBorderStyleColor, frame, t.r, t.g, t.b, t.a or 1)
 end
 
-local function ApplyEdge(frame)
+local function ApplyEdge(frame, preserveHidden)
     if not db.useEdges then return end
     local E = _G.EllesmereUI
     local style = EdgeStyle()
@@ -365,7 +377,11 @@ local function ApplyEdge(frame)
     -- EllesmereUI's solid-border path calls borderFrame:Show(). Many Naowh frames are built and
     -- styled while intentionally hidden (Flight Timer, craft timer, HUD movers, pooled elements).
     -- Preserve that lifecycle state so creating a border never activates its owner.
-    local wasShown = frame:IsShown()
+    local wasShown, restoreHidden
+    if preserveHidden ~= false then
+        wasShown = frame:IsShown()
+        restoreHidden = not (issecretvalue and issecretvalue(wasShown))
+    end
     local ok, err
     if E.ApplyBorderStyle then
         ok, err = pcall(E.ApplyBorderStyle, frame, style.size, style.r, style.g, style.b, style.a, style.texture,
@@ -373,7 +389,7 @@ local function ApplyEdge(frame)
     elseif E.PP and E.PP.CreateBorder then
         ok, err = pcall(E.PP.CreateBorder, frame, style.r, style.g, style.b, style.a, style.size, "OVERLAY", 7)
     end
-    if not wasShown then frame:Hide() end
+    if restoreHidden and not wasShown then frame:Hide() end
     if not ok then
         lastError = tostring(err)
         return
@@ -455,6 +471,21 @@ local EXCLUDED = {
     NaowhForeverLayerTracker = true, NaowhForeverTopBar = true,
 }
 local CAST_BAR = "NaowhForeverFocusCastBar"
+local GCD = "NaowhForeverGcdTracker"
+
+-- The GCD tracker is a combat-heavy pooled module. Its dedicated toggle is a hard integration
+-- gate: generic/HUD styling must not fall through and touch any part of its frame tree.
+local function IsGcdFrame(frame)
+    if db.gcdBorders or not frame then return false end
+    local root = _G[GCD]
+    if not root then return false end
+    local node = frame
+    while node and node ~= UIParent do
+        if node == root then return true end
+        node = node.GetParent and node:GetParent()
+    end
+    return false
+end
 
 local function IsFocusCastPart(frame)
     if not frame then return false end
@@ -484,6 +515,7 @@ Edge = function(frame, naowhEdge, rest, isWindow)
     if not (frame and Skinned()) then return end
     if edged[frame] then return true end
     if not db.useEdges then return end
+    if IsGcdFrame(frame) then return end
     if db.edgeMode ~= "actionbars" and db.edgeSize <= 0 then return end
     if not isWindow and Excluded(frame) then return end
     edged[frame] = true
@@ -516,7 +548,10 @@ local function CreateAuraBorder(button)
     host:EnableMouse(false)
     host:SetFrameLevel(math.min(button:GetFrameLevel() + 3, LEVEL_CAP))
     ours[host] = true
-    ApplyEdge(host)
+    -- The overlay inherits the restricted aura button's visibility. IsShown() can therefore return
+    -- a secret boolean, which addon code must never branch on. New child frames are already shown
+    -- by default, so this secure construction path needs no hidden-state restoration.
+    ApplyEdge(host, false)
     if not applied[host] then
         host:Hide()
         return nil
@@ -725,8 +760,17 @@ end
 -- GCD tracker: its scrolling icons are pooled frames with a black edge texture of their own
 -- (no ns.Border). Scan when the tracker is shown or its layout changes instead of polling every
 -- half-second forever (the old ticker ran most often exactly when combat performance mattered).
-local GCD = "NaowhForeverGcdTracker"
 local gcdChildCount = -1
+
+local function SkinGcdChildren(...)
+    for index = 1, select("#", ...) do
+        local child = select(index, ...)
+        if not edged[child] and child.tex and child.border and child.glow then
+            child.border:SetAlpha(0)
+            if db.gcdBorders then Edge(child) end
+        end
+    end
+end
 
 local function GcdIcons()
     local gcd = _G[GCD]
@@ -734,12 +778,7 @@ local function GcdIcons()
     local count = gcd:GetNumChildren()
     if count == gcdChildCount then return true end
     gcdChildCount = count
-    for _, child in ipairs({ gcd:GetChildren() }) do
-        if not edged[child] and child.tex and child.border and child.glow then
-            child.border:SetAlpha(0)
-            if db.gcdBorders then Edge(child) end
-        end
-    end
+    SkinGcdChildren(gcd:GetChildren())
     return true
 end
 
@@ -754,7 +793,9 @@ local function WatchGcd()
         if gcd:IsVisible() then GcdIcons() end
     end
     local function Scan()
-        if waiting then return end
+        -- Once the upstream pool has reached its working size, most casts create no child. Avoid
+        -- allocating a timer for those casts; only a changed child count can require skinning.
+        if waiting or gcd:GetNumChildren() == gcdChildCount then return end
         waiting = true
         C_Timer.After(0, RunScan)
     end
@@ -797,7 +838,7 @@ local function QueueExtrasFor(frame)
     for _ = 1, 4 do
         if not node then return end
         local name = node.GetName and node:GetName()
-        if name == CAST_BAR or name == GCD or name == "NaowhForeverTopBar" then
+        if name == CAST_BAR or (db.gcdBorders and name == GCD) or name == "NaowhForeverTopBar" then
             QueueExtras()
             return
         end
@@ -814,9 +855,10 @@ end
 --  Blizzard's), above the window's content. The engine's ornate atlas frame is
 --  hidden where it has one; its 1px line sits under the wider border.
 -------------------------------------------------------------------------------
-local BLIZZARD_SKIN, FRIENDS_SKIN = "EllesmereUIBlizzardSkin", "EllesmereUIFriends"
+local BLIZZARD_SKIN, FRIENDS_SKIN, BAGS = "EllesmereUIBlizzardSkin", "EllesmereUIFriends", "EllesmereUIBags"
 local euiHosts = setmetatable({}, { __mode = "k" })   -- window -> our border frame, or false when skipped
 local euiWatched = setmetatable({}, { __mode = "k" })
+local euiBagFrames = setmetatable({}, { __mode = "k" })
 local euiCount = 0
 local EUI_CHILD_DEPTH = 2
 
@@ -827,8 +869,9 @@ local function WindowEngine()
 end
 
 -- Naowh already borders this window (its character panel lies over the character sheet).
-local function NaowhBorders(frame, w, h)
-    for _, child in ipairs({ frame:GetChildren() }) do
+local function FindNaowhBorder(w, h, ...)
+    for index = 1, select("#", ...) do
+        local child = select(index, ...)
         if applied[child] then
             local cw, ch = child:GetSize()
             if math.abs(cw - w) <= SIZE_SLACK and math.abs(ch - h) <= SIZE_SLACK then return true end
@@ -837,8 +880,18 @@ local function NaowhBorders(frame, w, h)
     return false
 end
 
+local function NaowhBorders(frame, w, h)
+    return FindNaowhBorder(w, h, frame:GetChildren())
+end
+
 local function EuiTry(frame)
-    if euiHosts[frame] ~= nil or not (db.useEdges and db.euiWindows and edgesReady) then return end
+    local enabled
+    if euiBagFrames[frame] then
+        enabled = db.euiBags
+    else
+        enabled = db.euiWindows
+    end
+    if euiHosts[frame] ~= nil or not (db.useEdges and enabled and edgesReady) then return end
     -- A protected window cannot take a new child in combat; it is tried again when next shown.
     if InCombatLockdown() and frame.IsProtected and frame:IsProtected() then return end
     local w, h = frame:GetSize()
@@ -879,6 +932,20 @@ local function EuiWatch(frame)
     if frame:IsVisible() then Later() end
 end
 
+-- EllesmereUI Bags owns its window frames and does not pass them through WSkin.Shell, so the
+-- generic window hook cannot discover them. They are stable globals created once at addon load.
+local function WatchEllesmereBags()
+    if not (db.useEdges and db.euiBags and C_AddOns.IsAddOnLoaded(BAGS)) then return end
+    local function Watch(frame)
+        if not frame then return end
+        euiBagFrames[frame] = true
+        EuiWatch(frame)
+    end
+    Watch(_G.EUI_MainBagFrame)
+    Watch(_G.EUI_ReagentBagFrame)
+    Watch(_G.EUI_BankFrame)
+end
+
 -- Hooked as early as this addon loads (EllesmereUIBlizzardSkin loads before it), so windows the
 -- engine skins at login are caught too.
 local function HookEllesmereWindows()
@@ -893,8 +960,11 @@ local function HookEllesmereWindows()
 end
 
 local function EuiFlush()
-    if not (db.useEdges and db.euiWindows) then return end
-    if C_AddOns.IsAddOnLoaded(FRIENDS_SKIN) and _G.FriendsFrame then EuiWatch(_G.FriendsFrame) end
+    if not (db.useEdges and (db.euiWindows or db.euiBags)) then return end
+    if db.euiWindows and C_AddOns.IsAddOnLoaded(FRIENDS_SKIN) and _G.FriendsFrame then
+        EuiWatch(_G.FriendsFrame)
+    end
+    WatchEllesmereBags()
     for frame in pairs(euiWatched) do
         if frame:IsVisible() then EuiTry(frame) end
     end
@@ -944,7 +1014,7 @@ local function HookFrames()
     if needBorderHook and type(border) == "function" and type(black) == "table" then
         ns.Border = function(frame, color, alpha)
             local result = border(frame, color, alpha)
-            if frame and type(result) == "table" then
+            if frame and type(result) == "table" and not IsGcdFrame(frame) then
                 local focusPart = trackFocus and IsFocusCastPart(frame)
                 if color == black and (db.useShell or focusPart) then
                     outlines[frame] = result
@@ -976,8 +1046,9 @@ local function HookFrames()
         local class = ok and type(sample) == "table" and getmetatable(sample)
         local paint = class and class.Paint
         if type(paint) == "function" then
-            class.Paint = function(self, alpha, ...)
-                paint(self, alpha, ...)
+            -- Preserve the known-good 2.1.3 interception: observe the shared method without
+            -- replacing Naowh's implementation or altering its return/call semantics.
+            hooksecurefunc(class, "Paint", function(self, alpha)
                 local frame = self.frame
                 if frame and Skinned() then
                     frame._euiAlpha = alpha
@@ -990,7 +1061,7 @@ local function HookFrames()
                         Watch(frame)
                     end
                 end
-            end
+            end)
             hooks.windows = true
         end
     end
@@ -1021,8 +1092,10 @@ local function HookFrames()
         local hudBackdrop = Parts.HudBackdrop
         Parts.HudBackdrop = function(frame, ...)
             local backdrop = hudBackdrop(frame, ...)
-            if addHudEdge and type(backdrop) == "table" then Edge(frame, backdrop.border) end
-            if findHudExtras then QueueExtrasFor(frame) end
+            if not IsGcdFrame(frame) then
+                if addHudEdge and type(backdrop) == "table" then Edge(frame, backdrop.border) end
+                if findHudExtras then QueueExtrasFor(frame) end
+            end
             return backdrop
         end
         hooks.hud = true
@@ -1058,12 +1131,10 @@ local function Install()
     installed = true
 
     if db.useColors then
-        local applyThemeColors = ns.ApplyThemeColors
-        ns.ApplyThemeColors = function(...)
-            applyThemeColors(...)
+        hooksecurefunc(ns, "ApplyThemeColors", function()
             local ok, err = pcall(Paint)
             if not ok then Report(err) end
-        end
+        end)
     end
 
     -- String tokens ("muted", "accent") are cached once by Naowh; resolving them to the live table
@@ -1136,6 +1207,7 @@ local SWITCHES = {
     slots = { "itemPlates", "Item buttons get a dark slot.", "Item buttons keep Naowh's look." },
     borders = { "useEdges", "Borders enabled.", "Borders disabled." },
     euiwindows = { "euiWindows", "EllesmereUI's windows get the border too.", "EllesmereUI's windows keep their own border." },
+    euibags = { "euiBags", "EllesmereUI bag windows get the border too.", "EllesmereUI bag windows keep their own border." },
 }
 
 local function OnOff(on) return on and "on" or "off" end
@@ -1144,7 +1216,7 @@ local function Status()
     Print(("EllesmereUI font %s, window shell %s, item slots %s, edges %d px, dividers %d%%, button border %d%%.")
         :format(OnOff(db.useFont), OnOff(db.useShell), OnOff(db.itemPlates), db.edgeSize, db.borderAlpha,
         db.buttonBorderAlpha))
-    Print("/nfeui font | colors | shell | slots | borders | euiwindows - turn each part on or off")
+    Print("/nfeui font | colors | shell | slots | borders | euiwindows | euibags - turn each part on or off")
     Print("/nfeui edge bars | <0-4> - item button, HUD and bar border: your action bar's, or plain px (0 = off)")
     Print("/nfeui border <0-100> - divider and inner line strength")
     Print("/nfeui button <0-100> - button border strength")
@@ -1342,6 +1414,7 @@ local function RefreshSettings()
     settingsControls.topBarBorders:SetChecked(db.topBarBorders)
     settingsControls.edgeMode:SetChecked(db.edgeMode == "actionbars")
     settingsControls.euiWindows:SetChecked(db.euiWindows)
+    settingsControls.euiBags:SetChecked(db.euiBags)
     settingsControls.edgeSize:SetValue(db.edgeSize)
     settingsControls.borderAlpha:SetValue(db.borderAlpha)
     settingsControls.buttonBorderAlpha:SetValue(db.buttonBorderAlpha)
@@ -1447,9 +1520,11 @@ local function BuildSettings()
     integrations:SetText("Integrations")
     AddSettingsCheck(panel, "Border EllesmereUI windows", "euiWindows", -324,
         "Match supported EllesmereUI and Blizzard windows to Naowh borders.", nil, 360)
+    AddSettingsCheck(panel, "Border EllesmereUI bags", "euiBags", -350,
+        "Match EllesmereUI's bag, reagent bag, and bank windows to Naowh borders.", nil, 360)
 
     local enableAll = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    enableAll:SetPoint("TOPLEFT", 360, -366)
+    enableAll:SetPoint("TOPLEFT", 360, -392)
     enableAll:SetSize(115, 24)
     enableAll:SetText("Enable All")
     enableAll:SetScript("OnClick", function()
@@ -1469,7 +1544,7 @@ local function BuildSettings()
     end)
 
     local reset = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    reset:SetPoint("TOPLEFT", 360, -402)
+    reset:SetPoint("TOPLEFT", 360, -428)
     reset:SetSize(140, 24)
     reset:SetText("Reset to Defaults")
     reset:SetScript("OnClick", function()
@@ -1539,7 +1614,7 @@ NS.Settings = {
 NS.Runtime = {}
 
 function NS.Runtime:OnPlayerLogin()
-    if db and db.useEdges and (installed or db.euiWindows) then
+    if db and db.useEdges and (installed or db.euiWindows or db.euiBags) then
         -- One frame later, so EllesmereUI's action bars have finished their own login setup.
         C_Timer.After(0, FlushEdges)
     else
@@ -1572,5 +1647,8 @@ function NS.Runtime:OnAddonLoaded(name)
     elseif name == BLIZZARD_SKIN then
         local okHook, errHook = pcall(HookEllesmereWindows)
         if not okHook then lastError = tostring(errHook) end
+    elseif name == BAGS then
+        local okBags, errBags = pcall(WatchEllesmereBags)
+        if not okBags then lastError = tostring(errBags) end
     end
 end

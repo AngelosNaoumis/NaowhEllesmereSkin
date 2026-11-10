@@ -18,8 +18,9 @@ command interface and `/nfeui debug` reports installed hooks.
 
 The page controls theme colors, font, window shells, item plates, the shared border engine, Naowh
 window borders, generic element borders, item-button borders, HUD/tracker borders, PvP and Raid
-aura borders, focus cast-bar borders, GCD tracker borders, top-bar borders, and supported
-EllesmereUI-window borders. Enable All, Disable All, and Reset to Defaults are provided.
+aura borders, focus cast-bar borders, GCD tracker borders, top-bar borders, supported
+EllesmereUI-window borders, and EllesmereUI bag/bank borders. Enable All, Disable All, and Reset to
+Defaults are provided.
 
 ## Performance and safety
 

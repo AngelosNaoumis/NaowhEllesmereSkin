@@ -1,5 +1,78 @@
 # Changelog
 
+## 2.1.13
+
+- Reduced per-window memory allocation by sharing the unchanged Naowh window `OnShow` callback
+  instead of creating an identical closure for every discovered window.
+- Completed a conservative performance audit without changing the working window, aura, border,
+  GCD, settings, or integration behavior.
+
+## 2.1.12
+
+- Restored the known-good 2.1.3 window discovery and border pipeline exactly: secure backdrop
+  observation, Naowh window candidate scheduling, shell backdrop, and action-bar-style window edge.
+- Kept later unrelated safety gates for restricted aura buttons, disabled GCD integration, and
+  hidden-frame state preservation.
+- Removed the experimental native shell-border path from 2.1.10.
+
+## 2.1.11
+
+- Simplified Naowh window discovery by removing the redundant `Parts.Window` factory replacement.
+- Retained the shared backdrop paint interception and the reliable shell-owned window border.
+- Reduced coupling to Naowh Forever internals without adding scans, polling, or recurring work.
+
+## 2.1.10
+
+- Fixed missing borders on Naowh feature windows. The EllesmereUI shell now owns its documented
+  native window border instead of drawing a separate border on the underlying Naowh frame where
+  the shell host could obscure it.
+- Preserved the granular Naowh window-border toggle and removed the redundant per-window custom
+  border application and child-level traversal.
+
+## 2.1.9
+
+- Fixed Naowh Forever feature windows not receiving the EllesmereUI shell by watching the shared
+  window factory directly. This covers BiS, Dungeon Journal, Discovery, Gear Sets, Group Finder,
+  Group Inspect, Instance Tracker, Trainer Planner, saved rewards, junk lists, blessings, and other
+  windows built lazily by optional modules.
+- The fix is creation/show driven and adds no polling or idle CPU work.
+
+## 2.1.8
+
+- Restored Naowh window discovery for metatable-backed `Parts.Backdrop:Paint()` instances. The
+  secure table-method hook introduced in 2.1.5 did not reliably fire for these windows in-client,
+  leaving Gear Sets, BiS, Training Planner, Discovery, utilities, and other Naowh windows unskinned.
+- The restored class wrapper remains creation/paint-driven with no polling or idle processing.
+
+## 2.1.7
+
+- Fixed PvP Aura and Raid Debuff border creation attempting to branch on a secret `IsShown()`
+  boolean inherited from Blizzard's restricted aura container.
+- Aura overlays now bypass normal hidden-frame restoration, while other border targets safely
+  ignore secret visibility values if Blizzard exposes one.
+
+## 2.1.6
+
+- Made the GCD tracker toggle a hard module-level gate. When disabled, generic and HUD border
+  paths skip the tracker root and all descendants, and no GCD pool discovery, cast event, timer, or
+  GCD-specific layout work is installed.
+
+## 2.1.5
+
+- Replaced the Naowh theme and backdrop method wrappers with secure post-hooks, preserving upstream
+  return values and reducing compatibility risk.
+- Skip deferred window evaluation for hidden candidates until their real `OnShow` lifecycle event.
+- Skip GCD scan timers entirely when a successful cast did not grow the upstream icon pool.
+- Removed temporary child/region tables from GCD, border-level, window, and aura traversals.
+- Retain the event-driven `ADDON_LOADED` listener after login so late-loaded Naowh Combat and
+  EllesmereUI integrations initialize correctly without polling.
+- Fixed independent bag-window gating when general EllesmereUI-window borders are disabled.
+
+## 2.1.4
+
+- Added an independent setting for borders on EllesmereUI bag, reagent-bag, and bank windows.
+- Discover these stable frames once when EllesmereUI Bags loads; no scanning, polling, or idle work.
+
 ## 2.1.3
 
 - Preserve a frame's hidden state while applying an EllesmereUI border. EllesmereUI's solid-border

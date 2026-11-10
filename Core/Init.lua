@@ -6,7 +6,6 @@ events:RegisterEvent("PLAYER_LOGIN")
 events:SetScript("OnEvent", function(self, event, name)
     if event == "PLAYER_LOGIN" then
         self:UnregisterEvent("PLAYER_LOGIN")
-        self:UnregisterEvent("ADDON_LOADED")
         NS.Runtime:OnPlayerLogin()
         return
     end

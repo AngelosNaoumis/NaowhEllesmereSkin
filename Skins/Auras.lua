@@ -6,13 +6,18 @@ local Auras = {
 }
 NS:RegisterModule("Auras", Auras)
 
-local function HideGround(button)
-    for _, region in ipairs({ button:GetRegions() }) do
+local function HideGroundRegions(...)
+    for index = 1, select("#", ...) do
+        local region = select(index, ...)
         if region:GetObjectType() == "Texture" and region:GetDrawLayer() == "BACKGROUND" then
             region:SetAlpha(0)
             return
         end
     end
+end
+
+local function HideGround(button)
+    HideGroundRegions(button:GetRegions())
 end
 
 function Auras:Initialize(naowh, db, isSkinned, isAccessible, createBorder)
@@ -23,13 +28,13 @@ function Auras:Initialize(naowh, db, isSkinned, isAccessible, createBorder)
 
     if not self.skin then
         self.skin = function(button)
-        if self.hosts[button] or not self.isSkinned() or not self.isAccessible(button) then return end
-        if not (button.icon and button.swipe and button.timeText and button.countText) then return end
+            if self.hosts[button] or not self.isSkinned() or not self.isAccessible(button) then return end
+            if not (button.icon and button.swipe and button.timeText and button.countText) then return end
 
-        local host = self.createBorder(button)
-        if not host then return end
-        self.hosts[button] = host
-        HideGround(button)
+            local host = self.createBorder(button)
+            if not host then return end
+            self.hosts[button] = host
+            HideGround(button)
         end
     end
 

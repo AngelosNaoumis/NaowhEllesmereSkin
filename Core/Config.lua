@@ -8,7 +8,7 @@ Config.PERCENT = 100
 Config.FEATURE_KEYS = {
     "useFont", "useColors", "useShell", "itemPlates", "useEdges", "windowBorders",
     "genericBorders", "itemBorders", "hudBorders", "auraBorders", "focusCastBorder",
-    "gcdBorders", "topBarBorders", "euiWindows",
+    "gcdBorders", "topBarBorders", "euiWindows", "euiBags",
 }
 
 Config.DEFAULTS = {
@@ -33,6 +33,7 @@ Config.DEFAULTS = {
     borderAlpha = 12,
     buttonBorderAlpha = 30,
     euiWindows = true,
+    euiBags = true,
 }
 
 local function Clamp(value, minimum, maximum)

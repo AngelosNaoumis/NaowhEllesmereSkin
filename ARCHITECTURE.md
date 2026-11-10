@@ -22,6 +22,9 @@ category. Naowh skin activation occurs only after the real `NaowhForever` namesp
 supported EllesmereUI-window border integration is independent and may initialize without Naowh;
 all Naowh factory hooks and modules remain dormant when Naowh is disabled.
 
+`ADDON_LOADED` remains registered after login solely for supported load-on-demand integrations.
+It performs no polling and does no work between addon load events; every target path is idempotent.
+
 At `PLAYER_LOGIN`, enabled border integrations resolve and cache the EllesmereUI action-bar border
 style, then drain any one-time construction queue. Repeated addon events are harmless because every
 factory hook and feature module has an idempotent guard.
