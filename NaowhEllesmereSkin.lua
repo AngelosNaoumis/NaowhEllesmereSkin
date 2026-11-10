@@ -362,6 +362,10 @@ local function ApplyEdge(frame)
     local E = _G.EllesmereUI
     local style = EdgeStyle()
     if style.size <= 0 then return end
+    -- EllesmereUI's solid-border path calls borderFrame:Show(). Many Naowh frames are built and
+    -- styled while intentionally hidden (Flight Timer, craft timer, HUD movers, pooled elements).
+    -- Preserve that lifecycle state so creating a border never activates its owner.
+    local wasShown = frame:IsShown()
     local ok, err
     if E.ApplyBorderStyle then
         ok, err = pcall(E.ApplyBorderStyle, frame, style.size, style.r, style.g, style.b, style.a, style.texture,
@@ -369,6 +373,7 @@ local function ApplyEdge(frame)
     elseif E.PP and E.PP.CreateBorder then
         ok, err = pcall(E.PP.CreateBorder, frame, style.r, style.g, style.b, style.a, style.size, "OVERLAY", 7)
     end
+    if not wasShown then frame:Hide() end
     if not ok then
         lastError = tostring(err)
         return

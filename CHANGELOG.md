@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.3
+
+- Preserve a frame's hidden state while applying an EllesmereUI border. EllesmereUI's solid-border
+  API shows its target frame, which could expose inactive Flight/Craft timers, HUD movers, and other
+  frames styled during construction.
+
 ## 2.1.2
 
 - Decoupled supported EllesmereUI-window borders from Naowh Forever activation. EllesmereUI window

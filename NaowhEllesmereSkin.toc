@@ -2,7 +2,7 @@
 ## Title: |cff0091edNaowh|r Forever: |cff0cd29fEllesmereUI|r Skin
 ## Notes: Paints Naowh Forever's windows, buttons, borders and text with the EllesmereUI theme. Disable to go back to Naowh's own look.
 ## Author: local
-## Version: 2.1.2
+## Version: 2.1.3
 ## Dependencies: EllesmereUI
 ## OptionalDeps: EllesmereUIBlizzardSkin, EllesmereUIFriends, EllesmereUIActionBars
 ## SavedVariables: NaowhEllesmereSkinDB
