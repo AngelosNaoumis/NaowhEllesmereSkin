@@ -1,0 +1,20 @@
+## Interface: 16001
+## Title: |cff0091edNaowh|r Forever: |cff0cd29fEllesmereUI|r Skin
+## Notes: Paints Naowh Forever's windows, buttons, borders and text with the EllesmereUI theme. Disable to go back to Naowh's own look.
+## Author: local
+## Version: 2.1.2
+## Dependencies: EllesmereUI
+## OptionalDeps: EllesmereUIBlizzardSkin, EllesmereUIFriends, EllesmereUIActionBars
+## SavedVariables: NaowhEllesmereSkinDB
+
+# This folder name sorts before "NaowhForever" on purpose: the skin has to be listening when Naowh
+# Forever finishes loading, before any of its modules build a frame. Do not add NaowhForever as a
+# dependency, or it would load first and the hook would come too late.
+
+Core\Namespace.lua
+Core\Config.lua
+Core\Utils.lua
+NaowhEllesmereSkin.lua
+Skins\Auras.lua
+Options\Settings.lua
+Core\Init.lua
